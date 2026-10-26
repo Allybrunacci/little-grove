@@ -76,8 +76,9 @@ function openSettings() {
       : '';
     return `${sheetHead('Settings')}
       <div class="set-group"><h3>You</h3><div class="card pad"><div class="field" style="margin:0"><label for="st-name">Your name</label><input id="st-name" class="input" name="name" maxlength="40" placeholder="For your daily hello" value="${esc(S.name)}" autocomplete="given-name"></div></div></div>
-      <div class="set-group"><h3>Coins</h3><div class="card">
-        <div class="switch-row"><span><b>Perfect-day bonus</b><small>Extra coins when every habit is done</small></span>${stepper('bonus', S.settings.bonus, '', 'Perfect-day bonus')}</div>
+      <div class="set-group"><h3>Flower &amp; coins</h3><div class="card">
+        <div class="switch-row"><span><b>Flower blooms at</b><small>Share of the day’s habits done</small></span>${stepper('bloom', `${S.settings.bloom}%`, '', 'Flower blooms at')}</div>
+        <div class="switch-row"><span><b>Perfect-day bonus</b><small>Extra coins when every habit for the day is done</small></span>${stepper('bonus', S.settings.bonus, '', 'Perfect-day bonus')}</div>
       </div></div>
       <div class="set-group"><h3>Cycle</h3><div class="card">
         ${switchRow('cycle', 'Cycle tracker', 'Period predictions and tips for each phase', S.cycle.on)}${cyc}
@@ -102,6 +103,7 @@ function openSettings() {
       step(a, e, sh) {
         const n = a.dataset.name, d = +a.dataset.d;
         if (n === 'bonus') S.settings.bonus = clamp(S.settings.bonus + d, 0, 50);
+        if (n === 'bloom') S.settings.bloom = clamp(S.settings.bloom + d * 5, 10, 100);
         if (n === 'len') S.cycle.len = clamp(S.cycle.len + d, 18, 60);
         if (n === 'plen') S.cycle.plen = clamp(S.cycle.plen + d, 1, 12);
         save();
@@ -195,7 +197,7 @@ function startOnboarding() {
 
   const body = () => {
     if (st.step === 0) {
-      return `<div class="art">${plantArt(4)}</div>
+      return `<div class="art">${plantArt(5)}</div>
         <h1>Little Grove</h1>
         <p class="hand tag-line">grow good habits, one sprout at a time</p>
         <p class="lead">Tick off habits to earn coins, then spend them on treats you choose. There’s a cycle tracker too, with ideas for every phase.</p>
@@ -204,7 +206,7 @@ function startOnboarding() {
     if (st.step === 1) {
       return `<h1>Pick a few habits</h1>
         <p class="lead">Start small. You can change the coins, add your own or remove any of these later.</p>
-        ${pickList(HABIT_IDEAS, st.habits, 'pick-h', it => `${it.coins} coins${(it.target || 1) > 1 ? ` each · ${it.target}× a day` : ''}`)}`;
+        ${pickList(HABIT_IDEAS, st.habits, 'pick-h', ideaSub)}`;
     }
     if (st.step === 2) {
       return `<h1>Choose some treats</h1>

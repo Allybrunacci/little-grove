@@ -3,6 +3,131 @@
 
 const polar = (cx, cy, r, deg) => { const a = (deg * Math.PI) / 180; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
 const emojiFor = name => { const hit = SYMPTOMS.concat(MOODS).find(x => x[0] === name); return hit ? hit[1] : '•'; };
+const li = x => `<li>${x}</li>`;
+
+// Which part of the cycle today is, for the guide's day-by-day advice.
+function stageKey(info) {
+  if (info.onPeriod) return info.day <= 2 ? 'period-heavy' : 'period-light';
+  if (info.late > 0) return 'late';
+  if (info.phase === 'menstrual') return info.day <= 2 ? 'period-heavy' : 'period-light';
+  if (info.phase === 'follicular') {
+    const sp = phaseSpans(info.L, info.P).find(x => x.p === 'follicular');
+    return sp && info.day > (sp.a + sp.b) / 2 ? 'fol-late' : 'fol-early';
+  }
+  if (info.phase === 'ovulatory') return 'ovu';
+  return info.dueIn <= 6 ? 'lut-late' : 'lut-early';
+}
+
+function guideBody(s) {
+  let h = s.intro ? `<p>${s.intro}</p>` : '';
+  if (s.rows) h += `<dl class="g-rows">${s.rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>`;
+  if (s.points) h += `<ul>${s.points.map(li).join('')}</ul>`;
+  if (s.tip) h += `<div class="g-tip"><span class="em" aria-hidden="true">💡</span><span>${s.tip}</span></div>`;
+  return h;
+}
+
+// A fold-out section that stays open when the page redraws.
+const foldSec = (key, em, title, body, cls) => `<details class="deep-sec${cls ? ' ' + cls : ''}" data-k="${key}"${UI.deep.has(key) ? ' open' : ''}>
+  <summary><span class="em" aria-hidden="true">${em}</span><b>${title}</b>${icon('chev-r')}</summary><div class="deep-body">${body}</div></details>`;
+
+const tipRow = (name, sub) => `<button type="button" class="tip-row" data-act="guide" data-n="${esc(name)}"><span class="em" aria-hidden="true">${emojiFor(name)}</span><span><b>${esc(name)}</b>${sub ? `<small>${sub}</small>` : ''}</span>${icon('chev-r')}</button>`;
+
+function todayCycleHtml(info) {
+  const t = today(), key = stageKey(info), st = STAGES[key], ph = PHASES[info.phase];
+  const log = S.cycle.days[t];
+  const items = log ? (log.sym || []).concat(log.mood || []) : [];
+  const logged = items.length
+    ? `<div class="tc-logged"><h4>For what you logged today</h4>${items.map(n => tipRow(n, SYMPTOM_TIPS[n] ? SYMPTOM_TIPS[n].help[0] : '')).join('')}</div>`
+    : `<button type="button" class="link-btn tc-log" data-act="log" data-d="${t}">Log how you feel today for tips that fit</button>`;
+  return `<div class="section-title"><div><h2>Today in your cycle</h2>${squiggle()}</div><span class="hand">${esc(st.label.toLowerCase())}</span></div>
+    <section class="card today-cycle" style="--ph-l:${ph.light}">
+      <div class="tc-head"><span class="em" aria-hidden="true">${key === 'late' ? '🗓️' : ph.emoji}</span><div><div class="season">Day ${info.day} · ${ph.name} phase</div><h3>${st.title}</h3></div></div>
+      <p class="tc-what">${st.what}</p>
+      <div class="tc-list"><h4>Today, try</h4><ul>${st.try.map(li).join('')}</ul></div>
+      <div class="tc-list ease"><h4>Go easy on</h4><ul>${st.ease.map(li).join('')}</ul></div>
+      ${logged}
+      <button type="button" class="btn sm block tc-guide" data-act="guide">🌿 Symptom &amp; mood guide</button>
+    </section>`;
+}
+
+// Symptoms and moods logged around the same point in two or more past cycles, due again in the next 3 days.
+function forecastHtml(info) {
+  const past = info.past;
+  if (past.length < 2) return '';
+  const t = today(), marks = {};
+  for (const [k, x] of Object.entries(S.cycle.days)) {
+    const items = (x.sym || []).concat(x.mood || []);
+    if (!items.length || k > t) continue;
+    let i = -1;
+    for (let j = past.length - 1; j >= 0; j--) if (past[j].start <= k) { i = j; break; }
+    const nx = past[i + 1];
+    let m = null;
+    if (nx && daysBetween(k, nx.start) <= 10) m = { off: -daysBetween(k, nx.start), cyc: i + 1 };
+    else if (i >= 0 && daysBetween(past[i].start, k) < 45) m = { off: daysBetween(past[i].start, k) + 1, cyc: i };
+    if (m) for (const it of items) (marks[it] || (marks[it] = [])).push(m);
+  }
+  const next = predictedStart(info);
+  const ahead = [1, 2, 3].map(n => {
+    const u = addDays(t, n);
+    if (u >= next) return daysBetween(next, u) + 1;
+    const b = daysBetween(u, next);
+    return b <= 10 ? -b : daysBetween(info.start, u) + 1;
+  });
+  const out = [];
+  for (const [name, ms] of Object.entries(marks)) {
+    const hits = ms.filter(m => ahead.some(a => Math.sign(a) === Math.sign(m.off) && Math.abs(a - m.off) <= 1));
+    const cycles = new Set(hits.map(m => m.cyc)).size;
+    if (cycles < 2) continue;
+    const offs = hits.map(m => m.off).sort((a, b) => a - b);
+    out.push({ name, cycles, off: offs[Math.floor(offs.length / 2)] });
+  }
+  if (!out.length) return '';
+  out.sort((a, b) => b.cycles - a.cycles);
+  const when = off => (off < 0 ? (off === -1 ? 'the day before your period' : `${-off} days before your period`) : `on day ${off} of your cycle`);
+  return `<div class="section-title"><div><h2>Coming up for you</h2>${squiggle()}</div><span class="hand">next 3 days</span></div>
+    <div class="tip-list">${out.slice(0, 3).map(x => tipRow(x.name, `You’ve logged it ${when(x.off)} in ${x.cycles} past cycles. ${SYMPTOM_TIPS[x.name] ? SYMPTOM_TIPS[x.name].help[0] : ''}`)).join('')}</div>`;
+}
+
+function helpHtml() {
+  return `<div class="section-title"><div><h2>When to get help</h2>${squiggle()}</div><span class="hand">trust your gut</span></div>
+    <div class="deep">
+      ${foldSec('help-gp', '💗', 'See your GP if', `<ul>${GET_HELP.gp.map(li).join('')}</ul>`)}
+      ${foldSec('help-now', '⚠️', 'Get help straight away if', `<ul>${GET_HELP.urgent.map(li).join('')}</ul>`, 'urgent')}
+    </div>
+    <div class="help-lines">${GET_HELP.lines.map(([tel, shown, what]) => `<a href="tel:${tel}"><span>${what}</span><b>${shown}</b></a>`).join('')}</div>`;
+}
+
+function openGuideSheet(name) {
+  const log = S.cycle.days[today()];
+  let sel = name || (log && ((log.sym || [])[0] || (log.mood || [])[0])) || 'Cramps';
+  if (!SYMPTOM_TIPS[sel]) sel = 'Cramps';
+  const chip = (n, em) => `<button type="button" class="chip${sel === n ? ' on' : ''}" data-act="pick" data-n="${esc(n)}" aria-pressed="${sel === n}">${em} ${n}</button>`;
+  const tpl = () => {
+    const tip = SYMPTOM_TIPS[sel];
+    return `${sheetHead('Symptom &amp; mood guide')}
+      <p class="lead">Tap one to see why it happens and what can help.</p>
+      <div class="field"><span class="label">Body</span><div class="chips" style="--chip-on:var(--blush)">${SYMPTOMS.map(([n, em]) => chip(n, em)).join('')}</div></div>
+      <div class="field"><span class="label">Mood</span><div class="chips" style="--chip-on:var(--lav)">${MOODS.map(([n, em]) => chip(n, em)).join('')}</div></div>
+      <section class="card guide-card">
+        <h3><span aria-hidden="true">${emojiFor(sel)}</span>${esc(sel)}</h3>
+        <p class="g-why">${tip.why}</p>
+        <h4>What can help</h4><ul>${tip.help.map(li).join('')}</ul>
+        ${tip.doctor ? `<div class="g-warn"><span class="em" aria-hidden="true">⚠️</span><span><b>See a GP if</b> ${tip.doctor}</span></div>` : ''}
+      </section>
+      <p class="disclaimer">General information, not medical advice. If you’re worried, talk to your GP or a pharmacist.</p>`;
+  };
+  openSheet(tpl(), {
+    label: 'Symptom and mood guide',
+    act: {
+      pick(a, e, sh) {
+        sel = a.dataset.n;
+        sh.set(tpl());
+        const c = $('.guide-card', sh.el);
+        if (c) c.scrollIntoView({ block: 'nearest', behavior: reduceMotion() ? 'auto' : 'smooth' });
+      },
+    },
+  });
+}
 
 function arcPath(cx, cy, r, a0, a1, color, sw) {
   const [x0, y0] = polar(cx, cy, r, a0), [x1, y1] = polar(cx, cy, r, a1);
@@ -112,6 +237,7 @@ function phaseSection(info) {
       <div class="energy"><span>Energy</span>${energy}</div>
       ${ph.note && S.cycle.fertile ? `<div class="note-pill"><span aria-hidden="true">🌼</span><span>${ph.note}</span></div>` : ''}
       <div class="focus-grid">${ph.focus.map(f => `<div class="focus"><h4><span aria-hidden="true">${f.icon}</span>${f.title}</h4><ul>${f.tips.map(tip => `<li>${tip}</li>`).join('')}</ul></div>`).join('')}</div>
+      <div class="deep"><span class="label">Go deeper</span>${GUIDE[sel].map((s, i) => foldSec(`${sel}-${i}`, s.icon, s.title, guideBody(s))).join('')}</div>
       <div class="phase-habits"><div class="label">Habits that suit this phase</div>
         <div class="chips">${ph.habits.map((h, i) => { const got = have.has(h.name.toLowerCase()); return `<button type="button" class="chip${got ? ' have' : ''}" data-act="ph-habit" data-p="${sel}" data-i="${i}" aria-label="${got ? `${esc(h.name)} is already a habit` : `Add ${esc(h.name)} as a habit for this phase`}">${h.emoji} ${esc(h.name)} ${got ? '✓' : '+'}</button>`; }).join('')}</div>
         <div class="hint">Added habits only show up during this phase.</div>
@@ -219,18 +345,25 @@ VIEWS.cycle = {
   title: 'Cycle',
   render() {
     const info = cycleInfo();
-    let html = info.has ? heroCycle(info) : setupHero();
+    let html = info.has ? heroCycle(info) + todayCycleHtml(info) : setupHero();
     html += phaseSection(info);
-    if (info.has) html += patternsHtml() + timelineHtml(info);
+    if (info.has) html += forecastHtml(info) + patternsHtml() + timelineHtml(info);
     html += calendarHtml();
     if (info.has) html += pastCyclesHtml(info);
-    html += '<p class="disclaimer">Predictions are estimates from what you log. They aren’t medical advice and aren’t a form of contraception. If something feels off, talk to a doctor.</p>';
+    html += helpHtml();
+    html += '<p class="disclaimer">Predictions are estimates from what you log, and the guide is general information. Neither is medical advice, and predictions aren’t a form of contraception. If something feels off, talk to a doctor.</p>';
     return html;
+  },
+  after(view) {
+    for (const det of $$('details[data-k]', view)) {
+      det.addEventListener('toggle', () => { if (det.open) UI.deep.add(det.dataset.k); else UI.deep.delete(det.dataset.k); });
+    }
   },
   act: {
     start() { openPeriodStart(); },
     end() { openPeriodEnd(); },
     log(a) { openDayLog(a.dataset.d || today()); },
+    guide(a) { openGuideSheet(a.dataset.n); },
     still() {
       const t = today();
       setFlow(t, Math.max(2, flowOf(t)), false);

@@ -1,7 +1,7 @@
 /* Little Grove — offline support. Network first so updates show straight away; the cache is the fallback. */
-const CACHE = 'little-grove-v2';
+const CACHE = 'little-grove-v3';
 const SHELL = [
-  './', './index.html', './app.css', './icons.js', './data.js', './app.js', './today.js', './rewards.js', './cycle.js',
+  './', './index.html', './app.css', './icons.js', './data.js', './guide.js', './app.js', './today.js', './rewards.js', './cycle.js',
   './history.js', './stats.js', './settings.js', './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
   './fonts/fraunces-latin.woff2', './fonts/nunito-latin.woff2', './fonts/caveat-latin.woff2',

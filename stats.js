@@ -87,6 +87,8 @@ function coinChart() {
   </section>`;
 }
 
+const GARDEN_KINDS = ['soil', 'sprout', 'sprout', 'bud', 'bloom', 'perfect'];
+
 function gardenHtml() {
   const t = today(), weeks = 16;
   const start = addDays(weekStartOf(t), -7 * (weeks - 1));
@@ -98,7 +100,7 @@ function gardenHtml() {
     let kind = 'none';
     if (k >= first) {
       const p = dayProgress(k);
-      kind = !p.n ? (p.any ? 'bloom' : 'none') : p.perfect ? 'bloom' : p.pct >= 0.5 ? 'bud' : p.done > 0 ? 'sprout' : 'soil';
+      kind = !p.n ? (p.any ? 'bloom' : 'none') : GARDEN_KINDS[growth(p)];
     }
     cells += `<div class="g">${gardenCell(kind, i * 7 + 3)}</div>`;
   }
@@ -112,10 +114,10 @@ function gardenHtml() {
   if (!labels[0] && !labels[1] && !labels[2]) labels[0] = MON[fromKey(start).getMonth()];
   return `<section class="card garden-card">
     <h3>Your garden</h3>
-    <p class="small muted" style="font-weight:700;margin-top:2px">Each day grows from seed to flower as you tick off habits. Last 16 weeks.</p>
+    <p class="small muted" style="font-weight:700;margin-top:2px">Each day grows from seed to flower as you tick off habits. It blooms at ${S.settings.bloom}%, and perfect days sparkle. Last 16 weeks.</p>
     <div class="garden" role="img" aria-label="Garden of your last 16 weeks">${cells}</div>
     <div class="garden-months cols" aria-hidden="true">${labels.map(l => `<span>${l}</span>`).join('')}</div>
-    <div class="garden-key"><span>Less</span><span class="scale" aria-hidden="true">${['soil', 'sprout', 'bud', 'bloom'].map((k, i) => gardenCell(k, i + 1)).join('')}</span><span>All done</span></div>
+    <div class="garden-key"><span>Less</span><span class="scale" aria-hidden="true">${['soil', 'sprout', 'bud', 'bloom', 'perfect'].map((k, i) => gardenCell(k, i + 1)).join('')}</span><span>Perfect</span></div>
   </section>`;
 }
 
@@ -149,9 +151,27 @@ function rhythmHtml() {
   return `<section class="card"><h3>Your week rhythm</h3><p class="small muted" style="font-weight:700;margin-top:2px">Average share of habits done, last 8 weeks</p>${body}</section>`;
 }
 
+// Weeks, fortnights or months done out of the last few (the current one only counts once it's done).
+function periodHits(h, max) {
+  const t = today();
+  let d = t, sched = 0, done = 0;
+  for (let i = 0; i < max; i++) {
+    const per = periodOf(h, d);
+    if (per.end < h.created) break;
+    const ok = periodCount(h, per.start) >= h.target;
+    if (ok || per.end < t) { sched++; if (ok) done++; }
+    d = addDays(per.start, -1);
+  }
+  return { sched, done };
+}
+
 function perHabitHtml() {
   const t = today(), from = addDays(t, -29);
   const rows = liveHabits().map(h => {
+    if (isInterval(h)) {
+      const r = periodHits(h, h.freq === 'week' ? 8 : 6);
+      return { h, sched: r.sched, done: r.done, pct: r.sched ? r.done / r.sched : 0, unit: FREQS[h.freq].unit };
+    }
     let sched = 0, done = 0;
     for (let k = maxKey(from, h.created); k <= t; k = addDays(k, 1)) {
       if (!onDay(h, k)) continue;
@@ -160,7 +180,7 @@ function perHabitHtml() {
       sched++;
       if (ok) done++;
     }
-    return { h, sched, done, pct: sched ? done / sched : 0 };
+    return { h, sched, done, pct: sched ? done / sched : 0, unit: 'day' };
   }).filter(r => r.sched > 0).sort((a, b) => b.pct - a.pct || b.done - a.done);
   if (!rows.length) return '';
   const top = rows[0], low = rows[rows.length - 1];
@@ -170,10 +190,10 @@ function perHabitHtml() {
   } else if (top.pct >= 0.8) {
     tip = '<div class="insight"><span class="em" aria-hidden="true">🌻</span><span>You’re keeping up with everything beautifully.</span></div>';
   }
-  return `<section class="card"><h3>Habit by habit</h3><p class="small muted" style="font-weight:700;margin-top:2px">Days done out of days planned, last 30 days</p>
+  return `<section class="card"><h3>Habit by habit</h3><p class="small muted" style="font-weight:700;margin-top:2px">Done out of planned: the last 30 days, or the last few weeks for weekly habits</p>
     <div style="margin-top:6px">${rows.map(r => {
       const pct = Math.round(r.pct * 100);
-      return `<div class="hstat" style="--c:${colorOf(r.h.color)[0]}"><span class="e" aria-hidden="true">${r.h.emoji}</span><b>${esc(r.h.name)}</b><span class="pc">${pct}%</span><span class="bar" aria-hidden="true"><span style="width:${pct}%"></span></span><small>${r.done} of ${plural(r.sched, 'day')}</small></div>`;
+      return `<div class="hstat" style="--c:${colorOf(r.h.color)[0]}"><span class="e" aria-hidden="true">${r.h.emoji}</span><b>${esc(r.h.name)}</b><span class="pc">${pct}%</span><span class="bar" aria-hidden="true"><span style="width:${pct}%"></span></span><small>${r.done} of ${plural(r.sched, r.unit)}</small></div>`;
     }).join('')}</div>${tip}</section>`;
 }
 

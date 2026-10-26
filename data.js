@@ -61,6 +61,18 @@ const HABIT_IDEAS = [
     { name: 'Message a friend', emoji: '💌', coins: 3, target: 1, color: 'blush' },
     { name: 'Learn something new', emoji: '🎧', coins: 4, target: 1, color: 'peach' },
   ] },
+  { group: 'Every so often', items: [
+    { name: 'Change the bed sheets', emoji: '🛏️', coins: 10, freq: 'week', color: 'blush' },
+    { name: 'Clean the bathroom', emoji: '🧹', coins: 12, freq: 'week', color: 'mint' },
+    { name: 'Meal prep for the week', emoji: '🍲', coins: 12, freq: 'week', color: 'peach' },
+    { name: 'Call family', emoji: '📞', coins: 8, freq: 'week', color: 'sky' },
+    { name: 'Gym or a class', emoji: '🏋️', coins: 8, target: 3, freq: 'week', color: 'peach' },
+    { name: 'Deep clean a room', emoji: '✨', coins: 15, freq: 'fortnight', color: 'butter' },
+    { name: 'Check my budget', emoji: '💸', coins: 10, freq: 'fortnight', color: 'mint' },
+    { name: 'See a friend', emoji: '👯', coins: 10, freq: 'fortnight', color: 'blush' },
+    { name: 'Plan something fun', emoji: '🎟️', coins: 12, freq: 'month', color: 'lavender' },
+    { name: 'Declutter a drawer', emoji: '🧺', coins: 12, freq: 'month', color: 'sage' },
+  ] },
 ];
 
 const REWARD_IDEAS = [
@@ -182,11 +194,19 @@ const PHASES = {
 
 function plantArt(stage) {
   const leaf = (d, fill) => `<path d="${d}" fill="${fill || '#a8c3a0'}" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>`;
+  const flower = (x, y, rx, ry, dist, fill, alt, core) => {
+    const n = core > 5 ? 6 : 5;
+    const petals = Array.from({ length: n }, (_, i) => `<ellipse cx="0" cy="-${dist}" rx="${rx}" ry="${ry}" transform="rotate(${(360 / n) * i})" fill="${i % 2 ? alt : fill}" stroke="${INK}" stroke-width="1.8"/>`).join('');
+    return `<g transform="translate(${x} ${y})">${petals}<circle r="${core}" fill="#f6d365" stroke="${INK}" stroke-width="1.8"/><circle cx="-${(core * 0.28).toFixed(2)}" cy="-${(core * 0.28).toFixed(2)}" r="${(core * 0.24).toFixed(2)}" fill="#fff" opacity=".8"/></g>`;
+  };
   let plant = '';
   if (stage === 0) {
     plant = `<ellipse cx="60" cy="83" rx="7" ry="5" fill="#c8a27a" stroke="${INK}" stroke-width="2"/><path d="M57.5 80.5q2.5-2.4 5 0" stroke="${INK}" stroke-width="1.6" fill="none" stroke-linecap="round"/>`;
   } else {
-    const top = [0, 70, 54, 46, 44][stage];
+    const top = [0, 70, 54, 46, 44, 44][stage];
+    if (stage === 5) {
+      plant += `<path d="M59.6 77C50 76.5 39 72 32.5 62" stroke="${INK}" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M60.4 67.5C70 67.5 81.5 64 87.5 55" stroke="${INK}" stroke-width="2.2" fill="none" stroke-linecap="round"/>`;
+    }
     plant += `<path d="M60 88C59 ${(88 + top) / 2} 61.5 ${top + 8} 60 ${top}" stroke="${INK}" stroke-width="2.6" fill="none" stroke-linecap="round"/>`;
     if (stage === 1) {
       plant += leaf('M60 73c-8 1-13.5-3-14.5-9.5 7.5-1 12.5 2.5 14.5 9.5z') + leaf('M60 72.5c7.5 0 12.5-4.5 13.5-10.5-7.5 0-12.5 3.5-13.5 10.5z', '#c4dbbb');
@@ -197,12 +217,10 @@ function plantArt(stage) {
     if (stage === 3) {
       plant += `<path d="M60 47c-6-3.5-6.5-11.5 0-16.5 6.5 5 6 13 0 16.5z" fill="#f4b9b2" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/><path d="M60 47c-2.5-2-3-6.5 0-10" stroke="${INK}" stroke-width="1.4" fill="none" stroke-linecap="round"/>`;
     }
-    if (stage === 4) {
-      const petals = [0, 60, 120, 180, 240, 300].map(a => `<ellipse cx="0" cy="-9" rx="6" ry="8.6" transform="rotate(${a})" fill="${a % 120 ? '#f4b9b2' : '#f8cfc9'}" stroke="${INK}" stroke-width="1.8"/>`).join('');
-      plant += `<g transform="translate(60 36)">${petals}<circle r="5.8" fill="#f6d365" stroke="${INK}" stroke-width="1.8"/><circle cx="-1.6" cy="-1.6" r="1.4" fill="#fff" opacity=".8"/></g>`;
-    }
+    if (stage >= 4) plant += flower(60, 36, 6, 8.6, 9, '#f4b9b2', '#f8cfc9', 5.8);
+    if (stage === 5) plant += flower(31.5, 58, 4.2, 5.6, 6, '#c9b8e8', '#ddd2f1', 3.6) + flower(88.5, 52, 4.2, 5.6, 6, '#f7c59f', '#fbd9bd', 3.6);
   }
-  const happy = stage === 4;
+  const happy = stage >= 4;
   const eyes = happy
     ? `<path d="M48.5 106.5q3-3.4 6 0M65.5 106.5q3-3.4 6 0" stroke="${INK}" stroke-width="2" fill="none" stroke-linecap="round"/>`
     : `<circle cx="51.5" cy="105.5" r="2" fill="${INK}"/><circle cx="68.5" cy="105.5" r="2" fill="${INK}"/>`;
@@ -213,8 +231,14 @@ function plantArt(stage) {
     <path d="M57 110.5q3 2.8 6 0" stroke="${INK}" stroke-width="1.9" fill="none" stroke-linecap="round"/>
     <ellipse cx="45.5" cy="110.5" rx="3.4" ry="2" fill="#f4b9b2"/><ellipse cx="74.5" cy="110.5" rx="3.4" ry="2" fill="#f4b9b2"/>`;
   const star = (x, y, s) => `<path class="twinkle" d="M${x} ${y - s}l${s * .3} ${s * .7} ${s * .7} ${s * .3}-${s * .7} ${s * .3}-${s * .3} ${s * .7}-${s * .3}-${s * .7}-${s * .7}-${s * .3} ${s * .7}-${s * .3}z" fill="#f6d365" stroke="${INK}" stroke-width="1.2" stroke-linejoin="round"/>`;
-  const sparkles = happy ? star(26, 42, 6) + star(96, 28, 7) + star(94, 66, 5) : '';
+  const sparkles = stage === 5 ? star(18, 34, 6) + star(100, 22, 7) + star(106, 76, 5) : stage === 4 ? star(96, 28, 6) : '';
   return `<svg class="plant" viewBox="0 0 120 130" aria-hidden="true"><g class="sway${stage ? ' grow' : ''}">${plant}</g>${pot}${sparkles}</svg>`;
+}
+
+// The little flower on Today's progress bar that marks where the plant blooms.
+function bloomMark() {
+  const petals = [0, 72, 144, 216, 288].map(a => `<ellipse cx="0" cy="-4.4" rx="3.1" ry="4.2" transform="rotate(${a})" fill="#f4b9b2" stroke="${INK}" stroke-width="1.3"/>`).join('');
+  return `<svg viewBox="-10.5 -10.5 21 21" aria-hidden="true">${petals}<circle r="2.7" fill="#f6d365" stroke="${INK}" stroke-width="1.3"/></svg>`;
 }
 
 function jarArt(balance) {
@@ -304,5 +328,6 @@ function gardenCell(kind, seed) {
   const col = BLOOMS[seed % BLOOMS.length];
   if (kind === 'bud') return `<svg viewBox="0 0 20 20">${soil}${stem}${leaves}<path d="M10 9.4c-2-1.2-2.2-3.8 0-5.4 2.2 1.6 2 4.2 0 5.4z" fill="${col}" stroke="${INK}" stroke-width="1" stroke-linejoin="round"/></svg>`;
   const petals = [0, 72, 144, 216, 288].map(a => `<ellipse cx="0" cy="-3" rx="2.3" ry="3.1" transform="rotate(${a})" fill="${col}" stroke="${INK}" stroke-width=".9"/>`).join('');
-  return `<svg viewBox="0 0 20 20">${soil}${stem}${leaves}<g transform="translate(10 6.6)">${petals}<circle r="1.8" fill="#f6d365" stroke="${INK}" stroke-width=".9"/></g></svg>`;
+  const sparkle = kind === 'perfect' ? `<path d="M16.6 1.4l.7 1.6 1.6.7-1.6.7-.7 1.6-.7-1.6-1.6-.7 1.6-.7z" fill="#f6d365" stroke="${INK}" stroke-width=".7" stroke-linejoin="round"/>` : '';
+  return `<svg viewBox="0 0 20 20">${soil}${stem}${leaves}<g transform="translate(10 6.6)">${petals}<circle r="1.8" fill="#f6d365" stroke="${INK}" stroke-width=".9"/></g>${sparkle}</svg>`;
 }

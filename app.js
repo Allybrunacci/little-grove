@@ -1,7 +1,7 @@
 /* Little Grove — core: storage, dates, coins, cycle maths, UI kit, router */
 'use strict';
 
-const APP_VERSION = '1.1';
+const APP_VERSION = '1.2';
 const STORE_KEY = 'little-grove:v1';
 
 /* ---------- tiny helpers ---------- */
@@ -65,6 +65,13 @@ function weekStartOf(k) {
 const weekOrder = () => [0, 1, 2, 3, 4, 5, 6].map(i => (i + S.settings.weekStart) % 7);
 
 /* ---------- state ---------- */
+// How often a habit is due. Anything but 'day' can be done on any day in its week, fortnight or month.
+const FREQS = {
+  day: { label: 'Daily', unit: 'day', per: 'a day' },
+  week: { label: 'Weekly', unit: 'week', per: 'a week' },
+  fortnight: { label: 'Fortnightly', unit: 'fortnight', per: 'a fortnight' },
+  month: { label: 'Monthly', unit: 'month', per: 'a month' },
+};
 const cleanId = v => String(v || '').replace(/[^\w-]/g, '').slice(0, 40) || uid();
 const cleanEmoji = (v, dflt) => String(v || '').replace(/[<>&"'`\\]/g, '').trim().slice(0, 16) || dflt;
 
@@ -78,7 +85,7 @@ function freshState() {
     rewards: [],
     ledger: [],
     cycle: { on: true, len: 28, plen: 5, fertile: true, days: {} },
-    settings: { bonus: 5, weekStart: 1, fx: true, backup: '' },
+    settings: { bonus: 5, bloom: 40, weekStart: 1, fx: true, backup: '' },
     savedAt: 0,
   };
 }
@@ -96,6 +103,8 @@ function normHabit(h) {
     color: COLORS[h.color] ? h.color : 'sage',
     days: Array.from(new Set(days)).sort(),
     phase: PHASES[h.phase] ? h.phase : '',
+    freq: FREQS[h.freq] ? h.freq : 'day',
+    anchor: isKey(h.anchor) ? h.anchor : isKey(h.created) ? h.created : today(),
     created: isKey(h.created) ? h.created : today(),
     archived: !!h.archived,
     archivedOn: isKey(h.archivedOn) ? h.archivedOn : '',
@@ -147,6 +156,7 @@ function migrate(d) {
   }
   const st = d.settings && typeof d.settings === 'object' ? d.settings : {};
   s.settings.bonus = clamp(Math.round(st.bonus === undefined ? 5 : +st.bonus || 0), 0, 100);
+  s.settings.bloom = clamp(Math.round(+st.bloom || 40), 10, 100);
   s.settings.weekStart = st.weekStart === 0 ? 0 : 1;
   s.settings.fx = st.fx !== false;
   s.settings.backup = isKey(st.backup) ? st.backup : '';
@@ -240,7 +250,7 @@ const habitById = id => S.habits.find(h => h.id === id);
 const rewardById = id => S.rewards.find(r => r.id === id);
 
 function onDay(h, d) {
-  if (!h.days.includes(dowOf(d))) return false;
+  if (h.freq === 'day' && !h.days.includes(dowOf(d))) return false;
   if (h.phase && cycleOn()) {
     const p = phaseOn(d);
     if (p && p !== h.phase) return false;
@@ -252,26 +262,92 @@ function existsOn(h, d) {
   if (h.archived && (!h.archivedOn || d >= h.archivedOn)) return false;
   return h.created <= d || countOf(d, h.id) > 0;
 }
-const countsOn = (h, d) => existsOn(h, d) && onDay(h, d);
 
+/* ---------- weekly, fortnightly and monthly habits ---------- */
+const isInterval = h => !!h && h.freq !== 'day';
+
+// The week, fortnight or month that day d falls in for this habit (just d for daily habits).
+function periodOf(h, d) {
+  if (h.freq === 'week') { const s = weekStartOf(d); return { start: s, end: addDays(s, 6) }; }
+  if (h.freq === 'fortnight') {
+    const ws = weekStartOf(d);
+    const n = Math.round(daysBetween(weekStartOf(h.anchor || d), ws) / 7);
+    const s = n % 2 === 0 ? ws : addDays(ws, -7);
+    return { start: s, end: addDays(s, 13) };
+  }
+  if (h.freq === 'month') {
+    const [y, m] = d.split('-').map(Number);
+    return { start: `${y}-${pad(m)}-01`, end: `${y}-${pad(m)}-${pad(new Date(y, m, 0).getDate())}` };
+  }
+  return { start: d, end: d };
+}
+function periodCount(h, d) {
+  const { start, end } = periodOf(h, d);
+  return memo(`pc${h.id}${start}`, () => {
+    let n = 0;
+    for (let k = start; k <= end; k = addDays(k, 1)) n += countOf(k, h.id);
+    return n;
+  });
+}
+const doneFor = (h, d) => (isInterval(h) ? periodCount(h, d) : countOf(d, h.id));
+function periodWord(h, d) {
+  const { start, end } = periodOf(h, d), t = today();
+  return `${start <= t && t <= end ? 'this' : 'that'} ${FREQS[h.freq].unit}`;
+}
+function ideaSub(it) {
+  const fr = FREQS[it.freq] || FREQS.day, n = it.target || 1;
+  return `${it.coins} coins${n > 1 ? ` each · ${n}× ${fr.per}` : it.freq && it.freq !== 'day' ? ` · ${fr.label.toLowerCase()}` : ''}`;
+}
+
+// Planned = daily habits due that day. Anything else ticked that day (weekly habits, unplanned
+// habits) is a bonus: it lifts the day's share done but never counts against it.
 function dayProgress(d) {
   return memo('p' + d, () => {
-    let done = 0, total = 0, full = 0, n = 0;
+    let done = 0, total = 0, full = 0, n = 0, extra = 0;
     for (const h of S.habits) {
-      if (!countsOn(h, d)) continue;
+      if (!existsOn(h, d)) continue;
       const c = countOf(d, h.id);
-      n++;
-      total += h.target;
-      done += Math.min(c, h.target);
-      if (c >= h.target) full++;
+      if (!isInterval(h) && onDay(h, d)) {
+        n++;
+        total += h.target;
+        done += Math.min(c, h.target);
+        if (c >= h.target) full++;
+      } else if (c > 0) extra += Math.min(c, h.target);
     }
-    return { done, total, full, n, pct: total ? done / total : 0, perfect: n > 0 && full === n, any: anyTicks(d) };
+    const all = total + extra, got = done + extra;
+    return { done, total, full, n, extra, got, pct: all ? got / all : 0, perfect: n > 0 && full === n, any: anyTicks(d) };
   });
+}
+
+/* ---------- the flower ---------- */
+const bloomAt = () => clamp(S.settings.bloom, 10, 100) / 100;
+// 0 seed · 1 sprout · 2 leafy · 3 bud · 4 in bloom · 5 perfect day (full bloom)
+function growth(p) {
+  if (!p.n) return p.any ? 4 : 1;
+  if (p.perfect) return 5;
+  if (!p.got) return 0;
+  const f = p.pct / bloomAt() + 1e-9;
+  return f >= 1 ? 4 : f >= 0.66 ? 3 : f >= 0.33 ? 2 : 1;
+}
+// Ticks of today's habits still needed to bloom.
+function toBloom(p) {
+  if (!p.n || p.perfect) return 0;
+  return Math.max(0, Math.ceil(bloomAt() * (p.total + p.extra) - p.got - 1e-9));
 }
 
 function habitStreak(h) {
   return memo('hs' + h.id, () => {
     const t = today();
+    if (isInterval(h)) {
+      let d = periodCount(h, t) >= h.target ? t : addDays(periodOf(h, t).start, -1), n = 0;
+      for (let i = 0; i < 600; i++) {
+        const { start, end } = periodOf(h, d);
+        if (end < h.created) break;
+        if (periodCount(h, start) >= h.target) n++; else break;
+        d = addDays(start, -1);
+      }
+      return n;
+    }
     let d = countOf(t, h.id) >= h.target ? t : addDays(t, -1), n = 0;
     for (let i = 0; i < 1000; i++, d = addDays(d, -1)) {
       const c = countOf(d, h.id);
@@ -655,7 +731,7 @@ function stepValue(v, dir, steps) {
 
 /* ---------- router ---------- */
 const VIEWS = {};
-const UI = { sel: null, week: null, restOpen: false, plantStage: null, hFilter: 'all', hDays: 14, calMonth: null, phaseTab: null, statRange: 'week' };
+const UI = { sel: null, week: null, restOpen: false, plantStage: null, hFilter: 'all', hDays: 14, calMonth: null, phaseTab: null, statRange: 'week', deep: new Set() };
 let CUR = null;
 
 function routeName() {
