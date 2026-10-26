@@ -429,6 +429,11 @@ textarea.input { min-height: 84px; resize: vertical; font-weight: 600; }
 .petal { position: fixed; top: -40px; font-size: 22px; line-height: 1; animation: fall var(--dur, 2.6s) cubic-bezier(.25, .6, .5, 1) var(--delay, 0s) forwards; }
 .burst { position: fixed; width: 10px; height: 10px; border-radius: 50%; animation: burst .7s ease-out forwards; }
 
+/* ---------- hand-drawn emoji (icons.js) ---------- */
+.lg-ic { display: inline-block; flex: none; width: 1.2em; height: 1.2em; vertical-align: -.26em; line-height: 0; }
+/* Sized by the emoji's font size, so container rules like ".btn svg" mustn't resize or shift them */
+.lg-ic > svg { display: block; width: 100% !important; height: 100% !important; margin: 0 !important; overflow: visible; }
+
 /* ---------- cycle ---------- */
 .cycle-hero { text-align: center; padding: 14px 12px 18px; background: var(--blush-l); margin-top: 4px; }
 .cycle-hero .ring { width: 250px; height: 250px; margin: 2px auto 0; position: relative; }

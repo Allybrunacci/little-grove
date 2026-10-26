@@ -1,7 +1,7 @@
 /* Little Grove — core: storage, dates, coins, cycle maths, UI kit, router */
 'use strict';
 
-const APP_VERSION = '1.0';
+const APP_VERSION = '1.1';
 const STORE_KEY = 'little-grove:v1';
 
 /* ---------- tiny helpers ---------- */

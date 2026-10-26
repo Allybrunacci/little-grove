@@ -32,7 +32,7 @@ function cycleRing(info) {
   }
   for (const sp of phaseSpans(info.L, info.P)) {
     const [x, y] = polar(cx, cy, r + sw / 2 + 12, -90 + ((sp.a - 1 + sp.b) / 2) * seg);
-    s += `<text x="${f1(x)}" y="${f1(y)}" text-anchor="middle" dominant-baseline="central" font-size="15">${PHASES[sp.p].emoji}</text>`;
+    s += emojiArtIn(PHASES[sp.p].emoji, x, y, 19);
   }
   const [mx, my] = polar(cx, cy, r, -90 + (info.day - 0.5) * seg);
   s += `<circle cx="${f1(mx)}" cy="${f1(my)}" r="14" fill="#fffdf8" stroke="#3b3530" stroke-width="2.6"/><circle cx="${f1(mx)}" cy="${f1(my)}" r="6" fill="${PHASES[info.phase].color}" stroke="#3b3530" stroke-width="1.6"/>`;
