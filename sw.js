@@ -1,4 +1,5 @@
-/* Little Grove — offline support. Network first so updates show straight away; the cache is the fallback. */
+/* Little Grove — offline support. Network first so updates show straight away; the cache is the fallback.
+   Only touches its own caches, so other apps on the same site keep theirs. */
 const CACHE = 'little-grove-v3';
 const SHELL = [
   './', './index.html', './app.css', './icons.js', './data.js', './guide.js', './app.js', './today.js', './rewards.js', './cycle.js',
@@ -14,7 +15,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k.startsWith('little-grove-') && k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
