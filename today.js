@@ -123,27 +123,37 @@ function dueTag(h, d, n) {
   return `<span class="due${left <= 1 ? ' soon' : ''}">${f.label} · ${when}</span>`;
 }
 
+// A little gold star for each tick past the goal.
+const STAR_DOT = '<svg class="xdot" viewBox="0 0 16 16"><path d="M8 1.2l1.88 4.61 4.97.37-3.81 3.21 1.19 4.83L8 11.6l-4.23 2.62 1.19-4.83-3.81-3.21 4.97-.37z" fill="#f2c94c" stroke="#3b3530" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+
 function habitCard(h, d) {
   const iv = isInterval(h);
   const n = doneFor(h, d), done = n >= h.target, multi = h.target > 1;
+  const over = Math.max(0, n - h.target);
+  // Habits done more than once, or that earn bonus coins for going over, get a − / + counter.
+  const counted = multi || h.extra || over > 0;
+  const more = done && h.extra && over < MAX_EXTRA;
   const [c, cl] = colorOf(h.color);
   const streak = d === today() ? habitStreak(h) : 0;
   const meta = [coinTag(`+${h.coins}${multi ? ' each' : ''}`)];
   if (iv) meta.push(dueTag(h, d, n));
-  if (multi) meta.push(`<span>${n} / ${h.target}${h.unit ? ' ' + esc(h.unit) : ''}</span>`);
+  if (multi || over) meta.push(`<span>${n} / ${h.target}${h.unit ? ' ' + esc(h.unit) : ''}</span>`);
+  if (over) meta.push(`<span class="xtra">⭐ ${over} extra</span>`);
   if (streak >= 2) meta.push(`<span title="${streak} ${iv ? FREQS[h.freq].unit + 's' : 'days'} in a row">🔥 ${streak}</span>`);
   if (h.phase && cycleOn()) meta.push(`<span>${PHASES[h.phase].emoji} ${PHASES[h.phase].name}</span>`);
   let prog = '';
-  if (multi) {
+  if (multi || over) {
+    const stars = Math.min(over, 12);
     prog = h.target <= 12
-      ? `<div class="drops" aria-hidden="true">${Array.from({ length: h.target }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}</div>`
+      ? `<div class="drops" aria-hidden="true">${Array.from({ length: h.target }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('')}${STAR_DOT.repeat(stars)}${over > stars ? `<b class="xmore">+${over - stars}</b>` : ''}</div>`
       : `<div class="mini-meter" aria-hidden="true"><span style="width:${Math.round((100 * Math.min(n, h.target)) / h.target)}%"></span></div>`;
   }
   const name = esc(h.name);
-  const ctl = multi
-    ? `<div class="counter">
+  const label = more ? `${name} is done. Add an extra for ${plural(h.extraCoins, 'bonus coin')}` : done ? `${name} is done` : `Add one to ${name}`;
+  const ctl = counted
+    ? `<div class="counter${over ? ' over' : ''}">
         <button type="button" class="minus" data-act="minus" aria-label="Take one off ${name}" ${n ? '' : 'disabled'}>${icon('minus')}</button>
-        <button type="button" class="check plus" data-act="plus" aria-label="${done ? `${name} is done` : `Add one to ${name}`}">${done ? TICK : icon('plus')}<span class="count">${n}/${h.target}</span></button>
+        <button type="button" class="check plus${more ? ' more' : ''}" data-act="plus" aria-label="${label}">${done ? TICK : icon('plus')}<span class="count">${n}/${h.target}</span>${more ? `<span class="more-b" aria-hidden="true">${icon('plus')}</span>` : ''}</button>
       </div>`
     : `<button type="button" class="check" data-act="toggle" aria-pressed="${done}" aria-label="${done ? 'Untick' : 'Tick off'} ${name}">${TICK}</button>`;
   return `<div class="card habit${done ? ' done' : ''}" style="--c:${c};--cl:${cl}" data-id="${h.id}">
@@ -163,18 +173,27 @@ function flashHabit(id) {
   return card;
 }
 
-function tickHabit(h, d) {
+// extra: a tick past the goal, which earns the habit's bonus coins.
+function tickHabit(h, d, extra) {
   const before = plantStage(dayProgress(d));
-  addEntry({ k: 'habit', ref: h.id, d, a: h.coins, n: h.name, e: h.emoji });
+  const a = extra ? h.extraCoins : h.coins;
+  addEntry(Object.assign({ k: 'habit', ref: h.id, d, a, n: h.name, e: h.emoji }, extra ? { x: 1 } : {}));
   const bonus = syncBonus(d);
   save();
-  buzz(10);
+  buzz(extra ? [10, 30, 10] : 10);
   render();
   const card = flashHabit(h.id);
   if (card) {
     const btn = $('.check', card);
-    popAt(btn, h.coins);
-    if (doneFor(h, d) >= h.target) burstAt(btn, [colorOf(h.color)[0], '#f6d365', '#f4b9b2', '#c9b8e8']);
+    popAt(btn, a, extra);
+    if (extra) burstAt(btn, ['#f2c94c', '#f6d365', '#fff3b0', colorOf(h.color)[0]]);
+    else if (doneFor(h, d) >= h.target) burstAt(btn, [colorOf(h.color)[0], '#f6d365', '#f4b9b2', '#c9b8e8']);
+  }
+  if (extra) {
+    const x = extrasOf(h, d);
+    const when = isInterval(h) ? periodWord(h, d) : d === today() ? 'today' : 'that day';
+    toast(`⭐ ${x === 1 ? 'Going the extra mile!' : `${x} extra ${when}!`}${a ? ` +${plural(a, 'bonus coin')}` : ''}`);
+    return;
   }
   const p = dayProgress(d), after = plantStage(p);
   if (after === 5 && before < 5) {
@@ -192,8 +211,8 @@ function tickHabit(h, d) {
   }
 }
 
-// Takes off the latest tick from day d. For weekly-type habits, if there isn't one that day,
-// it takes the latest tick from the rest of that week, fortnight or month.
+// Takes off the latest tick from day d, extras first. For weekly-type habits, if there isn't one
+// that day, it takes the latest tick from the rest of that week, fortnight or month.
 function untickHabit(h, d) {
   const find = test => {
     for (let i = S.ledger.length - 1; i >= 0; i--) {
@@ -202,10 +221,12 @@ function untickHabit(h, d) {
     }
     return -1;
   };
-  let i = find(e => e.d === d);
+  let i = find(e => e.d === d && e.x);
+  if (i < 0) i = find(e => e.d === d);
   if (i < 0 && isInterval(h)) {
     const per = periodOf(h, d);
-    i = find(e => e.d >= per.start && e.d <= per.end);
+    i = find(e => e.x && e.d >= per.start && e.d <= per.end);
+    if (i < 0) i = find(e => e.d >= per.start && e.d <= per.end);
   }
   if (i < 0) return;
   const gone = S.ledger.splice(i, 1)[0];
@@ -280,7 +301,13 @@ VIEWS.today = {
       if (!h) return;
       if (doneFor(h, UI.sel) >= h.target) {
         const when = isInterval(h) ? periodWord(h, UI.sel) : UI.sel === today() ? 'today' : 'that day';
-        toast(`${h.emoji} Goal reached for ${when}! Tap − to take one off.`);
+        if (!h.extra) {
+          toast(`${h.emoji} Goal reached for ${when}! Did more? You can earn bonus coins for it.`, {
+            action: { label: 'Set it up', fn: () => openHabitSheet(h, null, { extraOn: true }) },
+          });
+        } else if (extrasOf(h, UI.sel) >= MAX_EXTRA) {
+          toast(`${h.emoji} ${MAX_EXTRA} extra ${when} is the most Little Grove counts. Amazing effort!`);
+        } else tickHabit(h, UI.sel, true);
         return;
       }
       tickHabit(h, UI.sel);
@@ -320,19 +347,30 @@ function habitIdeasHtml() {
   }).join('')}</div>`).join('')}</div>`;
 }
 
-function openHabitSheet(h, preset) {
+// opts.extraOn: open with the bonus for going over switched on (from Today's "Set it up").
+function openHabitSheet(h, preset, opts = {}) {
   const isNew = !h;
   const f = h
-    ? { name: h.name, emoji: h.emoji, coins: h.coins, target: h.target, unit: h.unit, color: h.color, days: h.days.slice(), phase: h.phase, freq: h.freq, anchor: h.anchor }
-    : Object.assign({ name: '', emoji: '🌱', coins: 3, target: 1, unit: '', color: COLOR_KEYS[S.habits.length % COLOR_KEYS.length], days: ALL_DAYS.slice(), phase: '', freq: 'day', anchor: today() }, preset || {});
+    ? { name: h.name, emoji: h.emoji, coins: h.coins, target: h.target, unit: h.unit, color: h.color, days: h.days.slice(), phase: h.phase, freq: h.freq, anchor: h.anchor, extra: h.extra, extraCoins: h.extraCoins }
+    : Object.assign({ name: '', emoji: '🌱', coins: 3, target: 1, unit: '', color: COLOR_KEYS[S.habits.length % COLOR_KEYS.length], days: ALL_DAYS.slice(), phase: '', freq: 'day', anchor: today(), extra: false, extraCoins: 3 }, preset || {});
+  if (opts.extraOn) {
+    f.extra = true;
+    if (!f.extraCoins) f.extraCoins = f.coins;
+  }
   let mode = isNew && !preset ? 'ideas' : 'form';
   let emojiOpen = false;
 
   const formHtml = () => {
     const fr = FREQS[f.freq], iv = f.freq !== 'day';
-    const earn = f.coins
-      ? `Earns ${plural(f.coins, 'coin')} each time${f.target > 1 ? `, up to ${f.coins * f.target} ${fr.per}` : ''}.`
-      : 'Worth no coins — just for tracking.';
+    const bonus = f.extra && f.extraCoins ? `${plural(f.extraCoins, 'bonus coin')} for each extra` : '';
+    let earn;
+    if (!f.coins) earn = bonus ? `No coins for the goal, but ${bonus}.` : 'Worth no coins — just for tracking.';
+    else if (!f.extra) earn = `Earns ${plural(f.coins, 'coin')} each time${f.target > 1 ? `, up to ${f.coins * f.target} ${fr.per}` : ''}.`;
+    else earn = `Earns ${plural(f.coins, 'coin')} each time${f.target > 1 ? ` (${f.coins * f.target} for the goal)` : ''}${bonus ? `, then ${bonus}` : ''}.`;
+    const overField = `<div class="over-field">
+        <label class="switch-row"><span><b>⭐ Bonus for going over</b><small>${f.extra ? `Done more than your goal? Keep tapping + to earn bonus coins for each extra, up to ${MAX_EXTRA} ${fr.per}.` : 'Earn bonus coins when you do more than your goal.'}</small></span><span class="switch"><input type="checkbox" name="extra" ${f.extra ? 'checked' : ''}><span></span></span></label>
+        ${f.extra ? `<div class="switch-row"><span><b>Bonus coins each extra</b><small>${f.extraCoins === f.coins ? 'The same as a normal tick' : f.extraCoins ? `${f.extraCoins > f.coins ? 'More' : 'Less'} than a normal tick` : 'No coins, just counted'}</small></span>${stepper('xcoins', f.extraCoins, '', 'Bonus coins each extra')}</div>` : ''}
+      </div>`;
     const phaseField = cycleOn()
       ? `<div class="field"><span class="label">When in my cycle?</span><div class="chips">${['', ...PHASE_ORDER].map(p => `<button type="button" class="chip${f.phase === p ? ' on' : ''}" data-act="phase" data-p="${p}" aria-pressed="${f.phase === p}">${p ? `${PHASES[p].emoji} ${PHASES[p].name}` : 'Any time'}</button>`).join('')}</div>
         <div class="hint">${f.phase ? `Only shows up in your ${PHASES[f.phase].name.toLowerCase()} phase.` : 'Shows up whatever phase you’re in.'}</div></div>`
@@ -361,8 +399,9 @@ function openHabitSheet(h, preset) {
         <div class="field"><span class="label">Coins each time</span>${stepper('coins', f.coins, '', 'Coins each time')}</div>
         <div class="field"><span class="label">Times ${fr.per}</span>${stepper('target', f.target, '', `Times ${fr.per}`)}</div>
       </div>
-      ${f.target > 1 ? `<div class="field"><label for="hf-unit">Unit <span class="faint">(optional)</span></label><input id="hf-unit" class="input" name="unit" maxlength="14" placeholder="e.g. L, glasses, pages" value="${esc(f.unit)}" autocomplete="off"></div>` : ''}
+      ${f.target > 1 || f.extra ? `<div class="field"><label for="hf-unit">Unit <span class="faint">(optional)</span></label><input id="hf-unit" class="input" name="unit" maxlength="14" placeholder="e.g. L, glasses, pages, hours" value="${esc(f.unit)}" autocomplete="off"></div>` : ''}
       <div class="hint" style="margin-top:8px">${earn}</div>
+      ${overField}
       ${when}
       ${phaseField}
       <div class="field"><span class="label">Colour</span><div class="swatches">${COLOR_KEYS.map(k => `<button type="button" class="swatch${f.color === k ? ' on' : ''}" style="--sw:${COLORS[k][0]}" data-act="color" data-k="${k}" aria-label="${k}" aria-pressed="${f.color === k}"></button>`).join('')}</div></div>
@@ -385,7 +424,7 @@ function openHabitSheet(h, preset) {
       mode(a, e, sh) { mode = a.dataset.m; sh.set(tpl()); },
       idea(a, e, sh) {
         const it = HABIT_IDEAS[+a.dataset.g].items[+a.dataset.i];
-        Object.assign(f, { name: it.name, emoji: it.emoji, coins: it.coins, target: it.target || 1, unit: it.unit || '', color: it.color || f.color, freq: it.freq || 'day' });
+        Object.assign(f, { name: it.name, emoji: it.emoji, coins: it.coins, target: it.target || 1, unit: it.unit || '', color: it.color || f.color, freq: it.freq || 'day', extraCoins: it.coins });
         mode = 'form';
         sh.set(tpl());
         sh.el.scrollTop = 0;
@@ -393,8 +432,13 @@ function openHabitSheet(h, preset) {
       emo(a, e, sh) { emojiOpen = !emojiOpen; sh.set(tpl()); },
       emoji(a, e, sh) { f.emoji = a.dataset.e; emojiOpen = false; sh.set(tpl()); },
       step(a, e, sh) {
-        const dir = +a.dataset.d;
-        if (a.dataset.name === 'coins') f.coins = clamp(stepValue(f.coins, dir, [[20, 1], [100, 5], [Infinity, 10]]), 0, 500);
+        const dir = +a.dataset.d, steps = [[20, 1], [100, 5], [Infinity, 10]];
+        if (a.dataset.name === 'coins') {
+          // The bonus follows the normal coins until it's set to something different.
+          const linked = f.extraCoins === f.coins;
+          f.coins = clamp(stepValue(f.coins, dir, steps), 0, 500);
+          if (linked) f.extraCoins = f.coins;
+        } else if (a.dataset.name === 'xcoins') f.extraCoins = clamp(stepValue(f.extraCoins, dir, steps), 0, 500);
         else f.target = clamp(f.target + dir, 1, 50);
         sh.set(tpl());
       },
@@ -423,6 +467,18 @@ function openHabitSheet(h, preset) {
       const t = e.target;
       if (t.name === 'name') f.name = t.value;
       else if (t.name === 'unit') f.unit = t.value;
+    },
+    change(e, sh) {
+      const t = e.target;
+      if (t.name !== 'extra') return;
+      f.extra = t.checked;
+      if (f.extra && !f.extraCoins) f.extraCoins = f.coins;
+      sh.set(tpl());
+    },
+    onOpen(sh) {
+      if (!opts.extraOn) return;
+      const fld = $('.over-field', sh.el);
+      if (fld) setTimeout(() => fld.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250);
     },
     submit(e, sh) {
       const name = f.name.trim();

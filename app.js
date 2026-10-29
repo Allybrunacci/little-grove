@@ -1,7 +1,7 @@
 /* Little Grove — core: storage, dates, coins, cycle maths, UI kit, router */
 'use strict';
 
-const APP_VERSION = '1.2';
+const APP_VERSION = '1.3';
 const STORE_KEY = 'little-grove:v1';
 
 /* ---------- tiny helpers ---------- */
@@ -99,6 +99,9 @@ function normHabit(h) {
     emoji: cleanEmoji(h.emoji, '🌱'),
     coins: clamp(Math.round(+h.coins || 0), 0, 500),
     target: clamp(Math.round(+h.target || 1), 1, 50),
+    // Going over the goal: each extra tick earns extraCoins (the same as a normal tick unless changed).
+    extra: !!h.extra,
+    extraCoins: clamp(Math.round(h.extraCoins === undefined || h.extraCoins === null || h.extraCoins === '' ? +h.coins || 0 : +h.extraCoins || 0), 0, 500),
     unit: String(h.unit || '').slice(0, 14),
     color: COLORS[h.color] ? h.color : 'sage',
     days: Array.from(new Set(days)).sort(),
@@ -134,7 +137,12 @@ function migrate(d) {
   s.rewards = Array.isArray(d.rewards) ? d.rewards.filter(r => r && typeof r === 'object').map(normReward) : [];
   s.ledger = Array.isArray(d.ledger)
     ? d.ledger.filter(e => e && typeof e === 'object' && isKey(e.d) && typeof e.a === 'number' && isFinite(e.a))
-      .map(e => ({ id: cleanId(e.id), t: +e.t || Date.now(), d: e.d, k: ['habit', 'reward', 'bonus'].includes(e.k) ? e.k : 'bonus', ref: String(e.ref || '').replace(/[^\w-]/g, ''), n: String(e.n || '').slice(0, 60), e: cleanEmoji(e.e, '✨'), a: Math.round(e.a) }))
+      .map(e => {
+        const k = ['habit', 'reward', 'bonus'].includes(e.k) ? e.k : 'bonus';
+        const o = { id: cleanId(e.id), t: +e.t || Date.now(), d: e.d, k, ref: String(e.ref || '').replace(/[^\w-]/g, ''), n: String(e.n || '').slice(0, 60), e: cleanEmoji(e.e, '✨'), a: Math.round(e.a) };
+        if (k === 'habit' && e.x) o.x = 1; // a tick past the goal, paid as bonus coins
+        return o;
+      })
     : [];
   const c = d.cycle && typeof d.cycle === 'object' ? d.cycle : {};
   s.cycle.on = c.on !== false;
@@ -290,6 +298,10 @@ function periodCount(h, d) {
   });
 }
 const doneFor = (h, d) => (isInterval(h) ? periodCount(h, d) : countOf(d, h.id));
+
+// Going over: with the habit's bonus switched on, ticks past the goal earn its bonus coins.
+const MAX_EXTRA = 20;
+const extrasOf = (h, d) => Math.max(0, doneFor(h, d) - h.target);
 function periodWord(h, d) {
   const { start, end } = periodOf(h, d), t = today();
   return `${start <= t && t <= end ? 'this' : 'that'} ${FREQS[h.freq].unit}`;
@@ -584,14 +596,14 @@ function toast(msg, opts = {}) {
 const reduceMotion = () => !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 const fxOn = () => S.settings.fx && !reduceMotion();
 
-function popAt(el, amount) {
+function popAt(el, amount, bonus) {
   if (!el || !amount) return;
   const r = el.getBoundingClientRect();
   const p = document.createElement('div');
-  p.className = 'pop' + (amount < 0 ? ' minus' : '');
+  p.className = 'pop' + (amount < 0 ? ' minus' : '') + (bonus ? ' bonus' : '');
   p.style.left = `${r.left + r.width / 2}px`;
   p.style.top = `${r.top - 6}px`;
-  p.innerHTML = `${signed(amount)}${COIN}`;
+  p.innerHTML = `${bonus ? '⭐' : ''}${signed(amount)}${COIN}`;
   $('#fx-root').append(p);
   setTimeout(() => p.remove(), 1050);
 }

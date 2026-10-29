@@ -10,14 +10,15 @@ function historyRows(es) {
   for (const e of es) {
     if (e.k === 'habit') {
       let r = byHabit[e.ref];
-      if (!r) { r = byHabit[e.ref] = { k: 'habit', d: e.d, n: e.n, e: e.e, a: 0, count: 0, t: 0, ids: [] }; rows.push(r); }
+      if (!r) { r = byHabit[e.ref] = { k: 'habit', d: e.d, n: e.n, e: e.e, a: 0, count: 0, xs: 0, t: 0, ids: [] }; rows.push(r); }
       r.a += e.a;
       r.count++;
+      if (e.x) r.xs++;
       r.t = Math.max(r.t, e.t);
       r.ids.push(e.id);
       r.n = e.n;
       r.e = e.e;
-    } else rows.push({ k: e.k, d: e.d, n: e.n, e: e.e, a: e.a, count: 1, t: e.t, ids: [e.id] });
+    } else rows.push({ k: e.k, d: e.d, n: e.n, e: e.e, a: e.a, count: 1, xs: 0, t: e.t, ids: [e.id] });
   }
   return rows.sort((a, b) => b.t - a.t);
 }
@@ -28,7 +29,7 @@ function historyRowHtml(r) {
   const amt = r.a ? `<span class="amt ${r.a > 0 ? 'plus' : 'minus'}">${signed(r.a)}${COIN}</span>` : '<span class="amt faint">0</span>';
   return `<button type="button" class="hrow" data-act="row" data-ids="${r.ids.join(',')}">
     <span class="e" aria-hidden="true">${r.e}</span>
-    <span class="t">${esc(r.n)}${r.count > 1 ? ` <span class="faint">×${r.count}</span>` : ''}<small>${KIND[r.k]} · ${fmtTime(r.t)}${later}</small></span>
+    <span class="t">${esc(r.n)}${r.count > 1 ? ` <span class="faint">×${r.count}</span>` : ''}<small>${KIND[r.k]}${r.xs ? ` · <span class="xtra">⭐ ${r.xs} extra</span>` : ''} · ${fmtTime(r.t)}${later}</small></span>
     ${amt}
   </button>`;
 }
@@ -82,6 +83,7 @@ function openEntrySheet(ids) {
   if (!es.length) return;
   const last = es[es.length - 1];
   const total = sum(es.map(e => e.a));
+  const xs = es.filter(e => e.x), xa = sum(xs.map(e => e.a));
   const kind = last.k;
   const times = es.map(e => fmtTime(e.t)).join(', ');
   const logged = dkey(new Date(last.t));
@@ -122,7 +124,7 @@ function openEntrySheet(ids) {
     <h3 class="center">${esc(last.n)}${es.length > 1 ? ` ×${es.length}` : ''}</h3>
     <p class="lead center">${fmtLong(last.d)}</p>
     <div class="card" style="margin-top:14px;padding:4px 14px">
-      <div class="switch-row"><span><b>Coins</b><small>${kind === 'reward' ? 'spent' : 'earned'}</small></span><span class="amt ${total >= 0 ? 'plus' : 'minus'}">${signed(total)}${COIN}</span></div>
+      <div class="switch-row"><span><b>Coins</b><small>${kind === 'reward' ? 'spent' : 'earned'}${xs.length ? `, including ${xa} bonus for ${xs.length} extra` : ''}</small></span><span class="amt ${total >= 0 ? 'plus' : 'minus'}">${signed(total)}${COIN}</span></div>
       <div class="switch-row"><span><b>Logged</b><small>${logged === last.d ? times : `${fmtDay(logged)} · ${times}`}</small></span></div>
     </div>
     <div class="btn-row">${buttons}</div>`, {
