@@ -1,8 +1,13 @@
-/* Little Grove — History: everything you've done and spent */
+/* Little Grove — Coin history: everything you've earned and spent (opened from Rewards) */
 'use strict';
 
-const KIND = { habit: 'Habit', reward: 'Treat', bonus: 'Bonus' };
-const FILTERS = [['all', 'All'], ['habit', 'Habits'], ['reward', 'Treats'], ['bonus', 'Bonuses']];
+const KIND = { habit: 'Habit', reward: 'Treat', bonus: 'Bonus', todo: 'To-do', move: 'Movement' };
+const FILTERS = [['all', 'All'], ['habit', 'Habits'], ['move', 'Movement'], ['todo', 'To-dos'], ['reward', 'Treats'], ['bonus', 'Bonuses']];
+// A movement session's own picture where there is one.
+function entryIcon(e) {
+  if (e.k === 'move' && typeof moveById === 'function') { const m = moveById(e.ref); if (m) return actArtSvg(actOf(m.act)); }
+  return e.e;
+}
 
 // One row per habit per day (water ×3), and one row per treat or bonus.
 function historyRows(es) {
@@ -18,7 +23,7 @@ function historyRows(es) {
       r.ids.push(e.id);
       r.n = e.n;
       r.e = e.e;
-    } else rows.push({ k: e.k, d: e.d, n: e.n, e: e.e, a: e.a, count: 1, xs: 0, t: e.t, ids: [e.id] });
+    } else rows.push({ k: e.k, d: e.d, n: e.n, e: entryIcon(e), a: e.a, count: 1, xs: 0, t: e.t, ids: [e.id] });
   }
   return rows.sort((a, b) => b.t - a.t);
 }
@@ -35,7 +40,8 @@ function historyRowHtml(r) {
 }
 
 VIEWS.history = {
-  title: 'History',
+  title: 'Coin history',
+  tab: 'rewards',
   render() {
     const f = UI.hFilter;
     const t = today(), ws = weekStartOf(t);
@@ -43,17 +49,22 @@ VIEWS.history = {
     const wkHabits = week.filter(e => e.k === 'habit').length;
     const wkCoins = sum(week.filter(e => e.a > 0).map(e => e.a));
     const wkTreats = week.filter(e => e.k === 'reward').length;
-    const hasBonus = S.ledger.some(e => e.k === 'bonus');
-    let html = `<div class="section-title page-title"><div><h1>History</h1>${squiggle('var(--sky)')}</div><span class="hand">everything you’ve grown</span></div>
+    const kinds = new Set(S.ledger.map(e => e.k));
+    let html = `<a class="back-link" href="#/rewards">${icon('chev-l')} Rewards</a>
+      <div class="section-title page-title"><div><h1>Coin history</h1>${squiggle('var(--sky)')}</div><span class="hand">everything you’ve grown</span></div>
       <div class="avg-grid">
         <div class="avg"><b>${wkHabits}</b><small>habits this week</small></div>
         <div class="avg"><b>${wkCoins}</b><small>coins this week</small></div>
         <div class="avg"><b>${wkTreats}</b><small>${wkTreats === 1 ? 'treat' : 'treats'} this week</small></div>
       </div>
-      <div class="filters" role="tablist">${FILTERS.filter(([k]) => k !== 'bonus' || hasBonus).map(([k, l]) => `<button type="button" class="chip${f === k ? ' on' : ''}" role="tab" aria-selected="${f === k}" data-act="filter" data-f="${k}">${l}</button>`).join('')}</div>`;
+      <div class="filters" role="tablist">${FILTERS.filter(([k]) => k === 'all' || k === 'habit' || k === 'reward' || kinds.has(k) || k === f).map(([k, l]) => `<button type="button" class="chip${f === k ? ' on' : ''}" role="tab" aria-selected="${f === k}" data-act="filter" data-f="${k}">${l}</button>`).join('')}</div>`;
     const list = f === 'all' ? S.ledger : S.ledger.filter(e => e.k === f);
     if (!list.length) {
-      html += `<div class="card empty" style="margin-top:8px">${bookArt()}<h3>${S.ledger.length ? 'Nothing here yet' : 'Your story starts here'}</h3><p>${f === 'reward' ? 'Treats you claim will show up here.' : 'Tick off a habit and it’ll show up here.'}</p><a class="btn sky" href="${f === 'reward' ? '#/rewards' : '#/today'}">${f === 'reward' ? 'See treats' : 'Go to today'}</a></div>`;
+      const [msg, href, btn] = f === 'reward' ? ['Treats you claim will show up here.', '#/rewards', 'See treats']
+        : f === 'move' ? ['Coins from movement you log show up here.', '#/wellness/move', 'Log movement']
+          : f === 'todo' ? ['Coins from to-dos you tick off show up here.', '#/today', 'Go to today']
+            : ['Tick off a habit and it’ll show up here.', '#/today', 'Go to today'];
+      html += `<div class="card empty" style="margin-top:8px">${bookArt()}<h3>${S.ledger.length ? 'Nothing here yet' : 'Your story starts here'}</h3><p>${msg}</p><a class="btn sky" href="${href}">${btn}</a></div>`;
       return html;
     }
     const byDay = new Map();
@@ -94,6 +105,10 @@ function openEntrySheet(ids) {
       : `<button type="button" class="btn ghost" data-close>Keep it</button><button type="button" class="btn danger" data-act="all">${icon('undo')} Untick it</button>`;
   } else if (kind === 'reward') {
     buttons = `<button type="button" class="btn ghost" data-close>Keep it</button><button type="button" class="btn danger" data-act="all">${icon('undo')} Refund coins</button>`;
+  } else if (kind === 'todo') {
+    buttons = `<button type="button" class="btn ghost" data-close>Keep it</button><button type="button" class="btn danger" data-act="todo">${icon('undo')} Untick it</button>`;
+  } else if (kind === 'move') {
+    buttons = `<button type="button" class="btn ghost" data-act="see">See it</button><button type="button" class="btn danger" data-act="move">${icon('trash')} Delete it</button>`;
   } else {
     buttons = `<button type="button" class="btn ghost" data-close>Keep it</button><button type="button" class="btn danger" data-act="all">Remove bonus</button>`;
   }
@@ -120,7 +135,7 @@ function openEntrySheet(ids) {
     });
   };
   openSheet(`${sheetHead(KIND[kind])}
-    <div class="big-emoji" aria-hidden="true">${last.e}</div>
+    <div class="big-emoji" aria-hidden="true">${entryIcon(last)}</div>
     <h3 class="center">${esc(last.n)}${es.length > 1 ? ` ×${es.length}` : ''}</h3>
     <p class="lead center">${fmtLong(last.d)}</p>
     <div class="card" style="margin-top:14px;padding:4px 14px">
@@ -132,6 +147,28 @@ function openEntrySheet(ids) {
     act: {
       one: (a, e, sh) => remove([last], sh),
       all: (a, e, sh) => remove(es, sh),
+      // A to-do: take the tick off (it goes back on your list). One that's been deleted just gives the coins back.
+      todo: (a, e, sh) => {
+        const x = todoById(last.ref);
+        if (!x) { remove(es, sh); return; }
+        const was = untickTodo(x);
+        save();
+        sh.close();
+        render();
+        toast(`Unticked “${esc(x.text)}” · back on your list`, { undo: () => { retickTodo(x, was); save(); render(); } });
+      },
+      move: (a, e, sh) => {
+        const m = moveById(last.ref);
+        if (!m) { remove(es, sh); return; }
+        sh.close();
+        deleteMove(m);
+      },
+      see: (a, e, sh) => {
+        const m = moveById(last.ref);
+        sh.close();
+        location.hash = '#/wellness/move';
+        if (m) setTimeout(() => openMoveSheet(m), 280);
+      },
     },
   });
 }

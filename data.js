@@ -98,6 +98,39 @@ const REWARD_IDEAS = [
   ] },
 ];
 
+/* ---------- Wellness: movement, meals and weight ---------- */
+// art: a drawing (ACT_ART in icons.js) or an emoji that has one; badge: hot, warm or yin, drawn in the corner.
+// emoji: kept in the coin history; min: the usual length in minutes; dist: 'km' or 'm' when distance matters.
+const ACTIVITIES = [
+  { id: 'pole', name: 'Pole', art: 'pole', emoji: '💃', min: 60, color: 'rose' },
+  { id: 'hot-yoga', name: 'Hot yoga', art: '🧘', badge: 'hot', emoji: '🧘', min: 60, color: 'peach' },
+  { id: 'hot-pilates', name: 'Hot pilates', art: 'pilates', badge: 'hot', emoji: '🔥', min: 45, color: 'peach' },
+  { id: 'hot-weights', name: 'Hot weights', art: '🏋', badge: 'hot', emoji: '🏋️', min: 45, color: 'peach' },
+  { id: 'warm-pilates', name: 'Warm pilates', art: 'pilates', badge: 'warm', emoji: '☀️', min: 45, color: 'butter' },
+  { id: 'warm-weights', name: 'Warm weights', art: '🏋', badge: 'warm', emoji: '🏋️', min: 45, color: 'butter' },
+  { id: 'yin-yoga', name: 'Yin yoga', art: '🧘', badge: 'yin', emoji: '🌙', min: 60, color: 'lavender' },
+  { id: 'running', name: 'Running', art: '🏃', emoji: '🏃', min: 30, dist: 'km', color: 'sky' },
+  { id: 'swimming', name: 'Swimming', art: '🏊', emoji: '🏊', min: 30, dist: 'm', color: 'sky' },
+  { id: 'yoga', name: 'Yoga', art: '🧘', emoji: '🧘', min: 60, color: 'lavender' },
+  { id: 'walking', name: 'Walking', art: '🚶', emoji: '🚶', min: 30, dist: 'km', color: 'sage' },
+  { id: 'reformer', name: 'Reformer pilates', art: 'reformer', emoji: '✨', min: 50, color: 'mint' },
+  { id: 'mat-pilates', name: 'Mat pilates', art: 'pilates', emoji: '✨', min: 45, color: 'mint' },
+  { id: 'barre', name: 'Barre', art: 'barre', emoji: '💃', min: 45, color: 'rose' },
+  { id: 'weights', name: 'Weights', art: '🏋', emoji: '🏋️', min: 45, color: 'peach' },
+  { id: 'hiit', name: 'HIIT', art: '⚡', emoji: '⚡', min: 30, color: 'butter' },
+  { id: 'cycling', name: 'Cycling & spin', art: '🚴', emoji: '🚴', min: 45, dist: 'km', color: 'sky' },
+  { id: 'dance', name: 'Dance', art: '💃', emoji: '💃', min: 60, color: 'lavender' },
+  { id: 'hiking', name: 'Hiking', art: 'hike', emoji: '🌿', min: 120, dist: 'km', color: 'sage' },
+  { id: 'stretching', name: 'Stretching', art: 'stretch', emoji: '🧘', min: 20, color: 'blush' },
+  { id: 'sport', name: 'Sport', art: '⛹', emoji: '⛹️', min: 60, color: 'peach' },
+];
+const EFFORTS = [[1, 'Gentle'], [2, 'Moderate'], [3, 'Tough']];
+const MOVE_FEELS = [['energised', 'Energised', '⚡'], ['happy', 'Happy', '😊'], ['calm', 'Calm', '😌'], ['tired', 'Tired', '🥱'], ['sore', 'Sore', '🤕']];
+const MEAL_TYPES = [['breakfast', 'Breakfast', '🍳'], ['lunch', 'Lunch', '🥗'], ['dinner', 'Dinner', '🍲'], ['snack', 'Snack', '🍎'], ['drink', 'Drink', '☕']];
+// No calories: what was on the plate, and how it felt.
+const MEAL_PLATE = [['veg', 'Veg'], ['fruit', 'Fruit'], ['protein', 'Protein'], ['grains', 'Grains'], ['dairy', 'Dairy']];
+const MEAL_FEELS = [['satisfied', 'Satisfied'], ['hungry', 'Still hungry'], ['full', 'Too full'], ['energised', 'Energised'], ['sluggish', 'Sluggish']];
+
 const STARTER_HABITS = ['Drink 1L of water', 'Go for a walk', 'Read 10 pages', 'Make my bed'];
 const STARTER_REWARDS = ['Bubble tea', 'Movie night', 'Bath & face mask', 'A new book'];
 

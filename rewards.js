@@ -55,7 +55,8 @@ VIEWS.rewards = {
     const next = open.find(r => r.cost > bal);
     const pace = dailyPace();
     let html = `<section class="card wallet">
-      <div><div class="hand">Your coin jar</div><div class="big">${COIN}<span>${bal}</span></div><div class="sub">${c.earned} earned · ${c.spent} spent</div></div>
+      <div><div class="hand">Your coin jar</div><div class="big">${COIN}<span>${bal}</span></div><div class="sub">${c.earned} earned · ${c.spent} spent</div>
+        <a class="hist-link" href="#/history">Coin history ${icon('chev-r')}</a></div>
       ${jarArt(Math.max(0, bal))}
     </section>`;
     if (next) {

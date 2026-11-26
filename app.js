@@ -1,7 +1,7 @@
 /* Little Grove — core: storage, dates, coins, cycle maths, UI kit, router */
 'use strict';
 
-const APP_VERSION = '1.3';
+const APP_VERSION = '1.4';
 const STORE_KEY = 'little-grove:v1';
 
 /* ---------- tiny helpers ---------- */
@@ -21,6 +21,7 @@ const TICK = '<svg viewBox="0 0 32 32" aria-hidden="true"><path class="tick" d="
 const squiggle = c => `<svg class="squiggle" viewBox="0 0 92 10" aria-hidden="true"><path d="M2 6c7-6 13 3 20 0s13-6 20 0 13 3 20 0 13-6 20 0" fill="none" stroke="${c || 'var(--blush)'}" stroke-width="3" stroke-linecap="round"/></svg>`;
 const colorOf = k => COLORS[k] || COLORS.sage;
 const buzz = (ms = 12) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* not supported */ } };
+const pressed = on => `aria-pressed="${!!on}"`;
 
 /* ---------- dates (local, as YYYY-MM-DD keys) ---------- */
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -85,7 +86,13 @@ function freshState() {
     rewards: [],
     ledger: [],
     cycle: { on: true, len: 28, plen: 5, fertile: true, days: {} },
-    settings: { bonus: 5, bloom: 40, weekStart: 1, fx: true, backup: '' },
+    // Wellness and to-dos (1.4). Meal photos live in the browser's database, not here.
+    moves: [],
+    acts: { custom: [], hidden: [] },
+    meals: [],
+    weights: [],
+    todos: [],
+    settings: { bonus: 5, bloom: 40, weekStart: 1, fx: true, backup: '', moveCoins: 5, todoCoins: 3 },
     savedAt: 0,
   };
 }
@@ -127,6 +134,72 @@ function normReward(r) {
   };
 }
 
+/* ---------- wellness and to-dos ---------- */
+const cleanRef = v => String(v || '').replace(/[^\w-]/g, '').slice(0, 40);
+const pickOne = (v, list) => (list.some(x => x[0] === v) ? v : '');
+const cleanTm = v => (/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v)) ? String(v) : '');
+// A session of movement: activity, how long, and optionally how hard, how far and how it felt.
+function normMove(m) {
+  const dist = Math.round((+m.dist || 0) * 100) / 100;
+  return {
+    id: cleanId(m.id),
+    d: isKey(m.d) ? m.d : today(),
+    t: +m.t || Date.now(),
+    act: cleanRef(m.act) || 'other',
+    min: clamp(Math.round(+m.min || 0), 0, 1440),
+    eff: clamp(Math.round(+m.eff || 0), 0, 3),
+    dist: isFinite(dist) ? clamp(dist, 0, 100000) : 0,
+    feel: pickOne(m.feel, MOVE_FEELS),
+    note: String(m.note || '').slice(0, 500),
+  };
+}
+// Your own activities, and the built-in ones you've hidden.
+function normActs(a) {
+  a = a && typeof a === 'object' ? a : {};
+  const custom = Array.isArray(a.custom) ? a.custom.filter(x => x && typeof x === 'object').slice(0, 60).map(x => ({
+    id: cleanRef(x.id) || 'c-' + uid(),
+    name: String(x.name || 'My activity').slice(0, 30),
+    emoji: cleanEmoji(x.emoji, '✨'),
+    dist: x.dist === 'km' || x.dist === 'm' ? x.dist : '',
+    min: clamp(Math.round(+x.min || 30), 5, 600),
+  })) : [];
+  const hidden = Array.isArray(a.hidden) ? Array.from(new Set(a.hidden.map(cleanRef).filter(Boolean))).slice(0, 100) : [];
+  return { custom, hidden };
+}
+// A meal: when, which meal, a photo (kept in the browser's database), and no calories.
+function normMeal(m) {
+  return {
+    id: cleanId(m.id),
+    d: isKey(m.d) ? m.d : today(),
+    tm: cleanTm(m.tm) || '12:00',
+    t: +m.t || Date.now(),
+    type: pickOne(m.type, MEAL_TYPES) || 'snack',
+    photo: cleanRef(m.photo),
+    note: String(m.note || '').slice(0, 300),
+    plate: Array.isArray(m.plate) ? MEAL_PLATE.map(p => p[0]).filter(k => m.plate.includes(k)) : [],
+    feel: pickOne(m.feel, MEAL_FEELS),
+  };
+}
+function normWeight(w) {
+  const kg = Math.round((+w.kg || 0) * 10) / 10;
+  if (!isFinite(kg) || kg < 20 || kg > 400) return null;
+  return { id: cleanId(w.id), d: isKey(w.d) ? w.d : today(), kg, note: String(w.note || '').slice(0, 200), t: +w.t || Date.now() };
+}
+// A one-off thing to do, worth some coins when it's ticked off.
+function normTodo(x) {
+  return {
+    id: cleanId(x.id),
+    text: String(x.text || '').trim().slice(0, 80) || 'Something to do',
+    due: isKey(x.due) ? x.due : '',
+    coins: clamp(Math.round(+x.coins || 0), 0, 100),
+    done: isKey(x.done) ? x.done : '',
+    doneT: +x.doneT || 0,
+    created: isKey(x.created) ? x.created : today(),
+    t: +x.t || Date.now(),
+  };
+}
+const LEDGER_KINDS = ['habit', 'reward', 'bonus', 'todo', 'move'];
+
 function migrate(d) {
   const s = freshState();
   if (!d || typeof d !== 'object') return s;
@@ -138,7 +211,7 @@ function migrate(d) {
   s.ledger = Array.isArray(d.ledger)
     ? d.ledger.filter(e => e && typeof e === 'object' && isKey(e.d) && typeof e.a === 'number' && isFinite(e.a))
       .map(e => {
-        const k = ['habit', 'reward', 'bonus'].includes(e.k) ? e.k : 'bonus';
+        const k = LEDGER_KINDS.includes(e.k) ? e.k : 'bonus';
         const o = { id: cleanId(e.id), t: +e.t || Date.now(), d: e.d, k, ref: String(e.ref || '').replace(/[^\w-]/g, ''), n: String(e.n || '').slice(0, 60), e: cleanEmoji(e.e, '✨'), a: Math.round(e.a) };
         if (k === 'habit' && e.x) o.x = 1; // a tick past the goal, paid as bonus coins
         return o;
@@ -168,6 +241,14 @@ function migrate(d) {
   s.settings.weekStart = st.weekStart === 0 ? 0 : 1;
   s.settings.fx = st.fx !== false;
   s.settings.backup = isKey(st.backup) ? st.backup : '';
+  s.settings.moveCoins = clamp(Math.round(st.moveCoins === undefined ? 5 : +st.moveCoins || 0), 0, 50);
+  s.settings.todoCoins = clamp(Math.round(st.todoCoins === undefined ? 3 : +st.todoCoins || 0), 0, 100);
+  const objs = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
+  s.moves = objs(d.moves).map(normMove);
+  s.acts = normActs(d.acts);
+  s.meals = objs(d.meals).map(normMeal);
+  s.weights = objs(d.weights).map(normWeight).filter(Boolean);
+  s.todos = objs(d.todos).map(normTodo);
   s.savedAt = +d.savedAt || 0;
   return s;
 }
@@ -175,13 +256,18 @@ function migrate(d) {
 let S = freshState();
 let REV = 0;
 let SAVE_OK = true;
+// 'ok' once saved data has been read; meal photos are only ever tidied up then.
+let LOADED = '';
 
 function load() {
   let raw = null;
+  LOADED = '';
   try { raw = localStorage.getItem(STORE_KEY); } catch (e) { SAVE_OK = false; }
-  if (!raw) return freshState();
+  if (!raw) { LOADED = 'new'; return freshState(); }
   try {
-    return migrate(JSON.parse(raw));
+    const s = migrate(JSON.parse(raw));
+    LOADED = 'ok';
+    return s;
   } catch (e) {
     try { localStorage.setItem(`${STORE_KEY}:unreadable-${Date.now()}`, raw); } catch (_) { /* full */ }
     return freshState();
@@ -743,7 +829,8 @@ function stepValue(v, dir, steps) {
 
 /* ---------- router ---------- */
 const VIEWS = {};
-const UI = { sel: null, week: null, restOpen: false, plantStage: null, hFilter: 'all', hDays: 14, calMonth: null, phaseTab: null, statRange: 'week', deep: new Set() };
+const UI = { sel: null, week: null, restOpen: false, plantStage: null, hFilter: 'all', hDays: 14, calMonth: null, phaseTab: null, statRange: 'week', deep: new Set(),
+  well: 'move', moveDays: 14, mealDays: 7, wtRange: '90', wtAll: false, todoDone: false };
 let CUR = null;
 
 function routeName() {
@@ -752,6 +839,8 @@ function routeName() {
   if (r === 'cycle' && !cycleOn()) return 'today';
   return r;
 }
+// The part after the page name: #/wellness/meals → 'meals'.
+const routeSub = () => ((location.hash || '').replace(/^#\/?/, '').split(/[?/]/)[1] || '');
 
 function render(fresh) {
   const name = routeName();
@@ -767,8 +856,10 @@ function render(fresh) {
     window.scrollTo(0, 0);
   }
   if (v.after) v.after(view);
+  // Pages without a tab of their own (coin history) light up the tab they belong to.
+  const tabName = v.tab || name;
   for (const t of $$('.tab')) {
-    const on = t.dataset.tab === name;
+    const on = t.dataset.tab === tabName;
     t.classList.toggle('active', on);
     if (on) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
   }
@@ -842,6 +933,8 @@ function boot() {
   if (!S.onboarded) startOnboarding();
   else askPersist();
   registerSW();
+  // Photos left behind by meals that were deleted (or a closed app mid-undo) are cleared out quietly.
+  if (LOADED === 'ok') setTimeout(tidyPhotos, 4000);
 }
 
 document.addEventListener('DOMContentLoaded', boot);

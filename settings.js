@@ -4,17 +4,13 @@
 const switchRow = (name, title, sub, on) => `<label class="switch-row"><span><b>${title}</b><small>${sub}</small></span><span class="switch"><input type="checkbox" name="${name}" ${on ? 'checked' : ''}><span></span></span></label>`;
 const isStandalone = () => !!(window.navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches));
 
-function exportData() {
-  S.settings.backup = today();
-  save();
-  const json = JSON.stringify(S, null, 1);
-  const name = `little-grove-backup-${today()}.json`;
-  const blob = new Blob([json], { type: 'application/json' });
+// Shares the backup file (installed app) or downloads it. Needs to run straight from a tap.
+function deliverBackup(blob, name, what) {
   if (isStandalone() && navigator.canShare && typeof File === 'function') {
     const file = new File([blob], name, { type: 'application/json' });
     if (navigator.canShare({ files: [file] })) {
       navigator.share({ files: [file], title: 'Little Grove backup' })
-        .then(() => toast('Backup shared 💾'))
+        .then(() => toast(`${what} shared 💾`))
         .catch(() => {});
       return;
     }
@@ -26,8 +22,37 @@ function exportData() {
   document.body.append(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
-  toast('Backup saved to your downloads 💾');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast(`${what} saved to your downloads 💾`);
+}
+
+// Everything you've saved, with meal photos added at the end as text.
+function backupBlob(photos) {
+  const json = JSON.stringify(S, null, 1);
+  const parts = [json.slice(0, json.lastIndexOf('}')).replace(/\s+$/, ''), ',\n "photos": ['];
+  photos.forEach((p, i) => parts.push(`${i ? ',' : ''}\n  ${JSON.stringify(p)}`));
+  parts.push('\n ]\n}\n');
+  return new Blob(parts, { type: 'application/json' });
+}
+
+async function exportData() {
+  S.settings.backup = today();
+  save();
+  const name = `little-grove-backup-${today()}.json`;
+  if (!photosInUse().size) { deliverBackup(backupBlob([]), name, 'Backup'); return; }
+  // Photos take a moment to pack, so the file is made first and then saved with a tap.
+  const hide = toast('Packing up your meal photos…', { ms: 120000 });
+  let photos = [];
+  try { photos = await photosForBackup(); } catch (e) { photos = []; }
+  hide();
+  const blob = backupBlob(photos);
+  openSheet(`${sheetHead('Your backup is ready')}
+    <div class="big-emoji" aria-hidden="true">💾</div>
+    <p class="lead center">Everything in Little Grove, plus ${plural(photos.length, 'meal photo')} · ${fmtBytes(blob.size)}</p>
+    <div class="btn-row"><button type="button" class="btn ghost" data-close>Not now</button><button type="button" class="btn sky" data-act="go">${icon('down')} Save it</button></div>`, {
+    label: 'Your backup is ready',
+    act: { go: (a, e, sh) => { sh.close(); deliverBackup(blob, name, 'Backup'); } },
+  });
 }
 
 function importData(file) {
@@ -40,13 +65,23 @@ function importData(file) {
       return;
     }
     const when = obj.savedAt ? ` from ${fmtDay(dkey(new Date(obj.savedAt)))}` : '';
+    const n = k => (Array.isArray(obj[k]) ? obj[k].length : 0);
+    const photos = Array.isArray(obj.photos) ? obj.photos : [];
+    const more = [n('moves') && plural(n('moves'), 'movement session'), n('meals') && `${plural(n('meals'), 'meal')}${photos.length ? ` (${plural(photos.length, 'photo')})` : ''}`,
+      n('weights') && plural(n('weights'), 'weigh-in'), n('todos') && plural(n('todos'), 'to-do')].filter(Boolean);
     confirmSheet({
       title: 'Restore this backup?',
       emoji: '💾',
-      body: `This backup${when} has ${plural(obj.habits.length, 'habit')}, ${plural((obj.rewards || []).length, 'treat')} and ${plural(obj.ledger.length, 'history entry', 'history entries')}. It will replace everything on this device.`,
+      body: `This backup${when} has ${plural(obj.habits.length, 'habit')}, ${plural((obj.rewards || []).length, 'treat')} and ${plural(obj.ledger.length, 'history entry', 'history entries')}${more.length ? `, plus ${more.join(', ')}` : ''}. It will replace everything on this device.`,
       yes: 'Restore it',
       danger: true,
-      onYes: () => {
+      onYes: async () => {
+        let photoErr = false;
+        if (photos.length) {
+          const hide = toast('Restoring your meal photos…', { ms: 120000 });
+          try { await restorePhotos(photos); } catch (e) { photoErr = true; }
+          hide();
+        }
         const next = migrate(obj);
         next.onboarded = true;
         replaceState(next);
@@ -54,7 +89,8 @@ function importData(file) {
         UI.week = null;
         save();
         render(true);
-        toast('Backup restored 🌱');
+        if (!photoErr) tidyPhotos();
+        toast(photoErr ? 'Backup restored, but some meal photos couldn’t be saved on this device' : 'Backup restored 🌱', { ms: photoErr ? 6000 : 2800 });
       },
     });
   };
@@ -79,6 +115,7 @@ function openSettings() {
       <div class="set-group"><h3>Flower &amp; coins</h3><div class="card">
         <div class="switch-row"><span><b>Flower blooms at</b><small>Share of the day’s habits done</small></span>${stepper('bloom', `${S.settings.bloom}%`, '', 'Flower blooms at')}</div>
         <div class="switch-row"><span><b>Perfect-day bonus</b><small>Extra coins when every habit for the day is done</small></span>${stepper('bonus', S.settings.bonus, '', 'Perfect-day bonus')}</div>
+        <div class="switch-row"><span><b>Coins for movement</b><small>For each session you log in Wellness</small></span>${stepper('mcoins', S.settings.moveCoins, '', 'Coins for movement')}</div>
       </div></div>
       <div class="set-group"><h3>Cycle</h3><div class="card">
         ${switchRow('cycle', 'Cycle tracker', 'Period predictions and tips for each phase', S.cycle.on)}${cyc}
@@ -90,7 +127,7 @@ function openSettings() {
       ${archH.length || archR.length ? `<div class="set-group"><h3>Removed</h3><div class="card">${archH.map(h => archRow('habit', h)).join('')}${archR.map(r => archRow('reward', r)).join('')}</div></div>` : ''}
       <div class="set-group"><h3>Your data</h3><div class="card pad">
         <div class="save-ok" style="padding-top:0">${SAVE_OK ? `${icon('check', 'ico')} Saved on this device` : '⚠️ Not saving — this browser is blocking storage'}</div>
-        <p class="small muted" style="font-weight:700">Everything lives in this browser on this device, and nothing is sent anywhere. Back up now and then, especially before clearing your browser data or switching phones.${S.settings.backup ? ` Last backup: ${fmtDay(S.settings.backup)}.` : ''}</p>
+        <p class="small muted" style="font-weight:700">Everything, meal photos included, lives in this browser on this device, and nothing is sent anywhere. Back up now and then, especially before clearing your browser data or switching phones.${S.settings.backup ? ` Last backup: ${fmtDay(S.settings.backup)}.` : ''}</p>
         <div class="btn-row"><button type="button" class="btn sky" data-act="export">${icon('down')} Back up</button><button type="button" class="btn" data-act="import">${icon('up')} Restore</button></div>
         <input type="file" name="file" accept="application/json,.json" hidden>
         <div class="btn-row" style="margin-top:10px"><button type="button" class="btn ghost" data-act="reset">Start over</button></div>
@@ -103,6 +140,7 @@ function openSettings() {
       step(a, e, sh) {
         const n = a.dataset.name, d = +a.dataset.d;
         if (n === 'bonus') S.settings.bonus = clamp(S.settings.bonus + d, 0, 50);
+        if (n === 'mcoins') S.settings.moveCoins = clamp(S.settings.moveCoins + d, 0, 50);
         if (n === 'bloom') S.settings.bloom = clamp(S.settings.bloom + d * 5, 10, 100);
         if (n === 'len') S.cycle.len = clamp(S.cycle.len + d, 18, 60);
         if (n === 'plen') S.cycle.plen = clamp(S.cycle.plen + d, 1, 12);
@@ -143,11 +181,14 @@ function openSettings() {
         confirmSheet({
           title: 'Start over?',
           emoji: '🥀',
-          body: 'This deletes all your habits, treats, coins, history and cycle logs on this device. Back up first if you might want them again.',
+          body: 'This deletes all your habits, treats, coins, history, to-dos, movement, meals and their photos, weigh-ins and cycle logs on this device. Back up first if you might want them again.',
           yes: 'Delete everything',
           danger: true,
           onYes: () => {
             try { localStorage.removeItem(STORE_KEY); } catch (err) { /* blocked */ }
+            phClear().catch(() => {});
+            for (const url of PH.urls.values()) URL.revokeObjectURL(url);
+            PH.urls.clear();
             replaceState(freshState());
             UI.sel = today();
             UI.week = null;

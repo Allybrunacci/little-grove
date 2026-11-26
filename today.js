@@ -261,7 +261,7 @@ VIEWS.today = {
     let html = heroHtml(d, p, UI.stageNow) + phaseChip(d) + weekHtml(d);
     if (!liveHabits().length) {
       html += `<div class="card empty" style="margin-top:18px">${canArt()}<h3>Plant your first habit</h3><p>Pick something small you’d like to do more often. Every tick earns coins.</p><button type="button" class="btn sage" data-act="add">${icon('plus')} Add a habit</button></div>`;
-      return html;
+      return html + todoSectionHtml(d);
     }
     if (sched.length || !every.length || live.some(h => !isInterval(h))) {
       html += `<div class="section-title"><div><h2>${d === t ? 'Today’s habits' : `Habits on ${fmtDay(d)}`}</h2>${squiggle()}</div><span class="hand">${sched.length ? (p.perfect ? 'all done ✿' : 'tap to tick') : ''}</span></div>`;
@@ -278,7 +278,7 @@ VIEWS.today = {
       html += `<details class="fold"${UI.restOpen ? ' open' : ''}><summary>${icon('chev-r')} Not planned for ${d === t ? 'today' : 'this day'} · ${rest.length}</summary><div class="habits rest-list">${rest.map(h => habitCard(h, d)).join('')}</div></details>`;
     }
     html += `<div class="add-wrap"><button type="button" class="add-card" data-act="add">${icon('plus')} Add a habit</button></div>`;
-    return html;
+    return html + todoSectionHtml(d);
   },
   after(view) {
     const g = $('.hero .grow', view);
@@ -287,8 +287,10 @@ VIEWS.today = {
       else g.addEventListener('animationend', () => g.classList.remove('grow'), { once: true });
     }
     UI.plantStage = UI.stageNow;
-    const f = $('details.fold', view);
+    const f = $('details.fold:not(.todo-fold)', view);
     if (f) f.addEventListener('toggle', () => { UI.restOpen = f.open; });
+    const td = $('details.todo-fold', view);
+    if (td) td.addEventListener('toggle', () => { UI.todoDone = td.open; });
   },
   act: {
     toggle(a) {
